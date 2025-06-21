@@ -8,3 +8,10 @@ class UserLogin(BaseModel):
     username: str
     password: str
     mfa_code: str
+
+class ForgetPassword(BaseModel):
+    username: str
+    new_password: str
+
+class DeleteUser(BaseModel):
+    username: str

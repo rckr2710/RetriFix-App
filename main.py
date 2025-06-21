@@ -1,11 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Security
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 from fastapi.responses import JSONResponse
 from models import User
-from auth import hash_password, verify_password
-from mfa import generate_mfa_secret, verify_mfa_token, get_totp_uri
-from schemas import UserCreate, UserLogin
+from auth import hash_password, verify_password, generate_mfa_secret, get_totp_uri, verify_mfa_token
+from jwt_token import create_access_token, verify_token, get_current_user, oauth2_scheme
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
 
 app = FastAPI()
 
@@ -17,27 +18,13 @@ def get_db():
     finally:
         db.close()
 
-
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-
-
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
     
 
 @app.post("/register")
-def create_user(user: UserCreate , db: Session = Depends(get_db)):
+def register(user: UserCreate , db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -58,6 +45,7 @@ def create_user(user: UserCreate , db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
+    
     db_user = db.query(User).filter(User.username == user.username).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -68,9 +56,29 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     if not verify_mfa_token(db_user.mfa_secret, user.mfa_code):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
     
-    return JSONResponse(
-        status_code=200,
-        content={
-            "message": "Login successful"
-        }
-    )
+    access_token = create_access_token(data={"sub": db_user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.put("/forget-password")
+def forget_password(request_model: ForgetPassword ,db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.username == request_model.username).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db_user.password = hash_password(request_model.new_password)
+    db.commit()
+    db.refresh(db_user)
+    return {"message": "Password updated successfully"}
+
+@app.get("/users")
+def get_users(db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    users = db.query(User).all()
+    return users
+
+@app.delete("/reset")
+def delete_user(request_model: DeleteUser,db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    db_user=db.query(User).filter(User.username == request_model.username).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(db_user)      
+    db.commit()
+    return {"message": f"{request_model.username} User deleted successfully"}
