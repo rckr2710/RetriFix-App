@@ -51,7 +51,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     if not verify_mfa_token(db_user.mfa_secret, user.mfa_code):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
     access_token = create_access_token(data={"sub": db_user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token}
+
 
 @app.put("/forget-password")
 def forget_password(request_model: ForgetPassword ,db: Session = Depends(get_db)):
@@ -63,10 +64,13 @@ def forget_password(request_model: ForgetPassword ,db: Session = Depends(get_db)
     db.refresh(db_user)
     return {"message": "Password updated successfully"}
 
-@app.get("/users")
-def get_users(db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
-    users = db.query(User).all()
-    return users
+@app.get("/user/{username}")
+def get_user(username: str, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    db_user = db.query(User).filter(User.username == username).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"User Found"}
+
 
 @app.delete("/reset")
 def delete_user(request_model: DeleteUser,db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
@@ -82,34 +86,36 @@ def delete_user(request_model: DeleteUser,db: Session = Depends(get_db), current
 
 
 
-from GitIssues.schemas import GithubIssue
-import httpx
-app = FastAPI()
 
-GITHUB_TOKEN = "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"
-GITHUB_REPO = "rckr2710/RetriFix-App"
 
-@app.post("/github-issue")
-async def create_github_issue(issue: GithubIssue):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
+# from GitIssues.schemas import GithubIssue
+# import httpx
+# app = FastAPI()
+
+# GITHUB_TOKEN = "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"
+# GITHUB_REPO = "rckr2710/RetriFix-App"
+
+# @app.post("/github-issue")
+# async def create_github_issue(issue: GithubIssue):
+#     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
     
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
-    }
+#     headers = {
+#         "Authorization": f"token {GITHUB_TOKEN}",
+#         "Accept": "application/vnd.github+json"
+#     }
 
-    data = {
-        "title": issue.title,
-        "body": issue.body
-    }
+#     data = {
+#         "title": issue.title,
+#         "body": issue.body
+#     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, headers=headers, json=data)
+#     async with httpx.AsyncClient(timeout=30.0) as client:
+#         response = await client.post(url, headers=headers, json=data)
 
-    if response.status_code == 201:
-        return {
-            "message": "Issue created successfully",
-            "url": response.json().get("html_url")
-        }
-    else:
-        raise HTTPException(status_code=response.status_code, detail=response.json())
+#     if response.status_code == 201:
+#         return {
+#             "message": "Issue created successfully",
+#             "url": response.json().get("html_url")
+#         }
+#     else:
+#         raise HTTPException(status_code=response.status_code, detail=response.json())
