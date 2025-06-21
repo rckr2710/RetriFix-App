@@ -1,0 +1,9 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+# Byte-compiled files
+*.pyc
+# Distribution / packaging
