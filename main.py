@@ -38,10 +38,7 @@ def register(user: UserCreate , db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return JSONResponse(
-        status_code=201,
-        content={
-            "message": "User created successfully", "mfa_uri": uri})
+    return uri
 
 @app.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
@@ -49,13 +46,10 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
     if not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid password")
-    
     if not verify_mfa_token(db_user.mfa_secret, user.mfa_code):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
-    
     access_token = create_access_token(data={"sub": db_user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -82,3 +76,40 @@ def delete_user(request_model: DeleteUser,db: Session = Depends(get_db), current
     db.delete(db_user)      
     db.commit()
     return {"message": f"{request_model.username} User deleted successfully"}
+
+
+
+
+
+
+from GitIssues.schemas import GithubIssue
+import httpx
+app = FastAPI()
+
+GITHUB_TOKEN = "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"
+GITHUB_REPO = "rckr2710/RetriFix-App"
+
+@app.post("/github-issue")
+async def create_github_issue(issue: GithubIssue):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    data = {
+        "title": issue.title,
+        "body": issue.body
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=headers, json=data)
+
+    if response.status_code == 201:
+        return {
+            "message": "Issue created successfully",
+            "url": response.json().get("html_url")
+        }
+    else:
+        raise HTTPException(status_code=response.status_code, detail=response.json())
