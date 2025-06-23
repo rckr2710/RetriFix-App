@@ -20,21 +20,12 @@ def verify_token(token: str):
     except JWTError:
         return None
     
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
-# def get_current_user(token: str = Depends(oauth2_scheme)):
-#     payload = verify_token(token)
-#     if not payload:
-#         raise HTTPException(status_code=401, detail="Invalid or expired token")
-#     return payload["sub"]
-
-def get_current_user(request: Request):
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+def get_current_user(token: str = Depends(oauth2_scheme)):
     payload = verify_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
     return payload["sub"]
 
+# Accept token from localstorage
