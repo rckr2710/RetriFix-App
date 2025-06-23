@@ -1,15 +1,26 @@
-from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi import FastAPI, Depends, HTTPException, Header, Security
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 from fastapi.responses import JSONResponse
 from models import User
 from auth import hash_password, verify_password, generate_mfa_secret, get_totp_uri, verify_mfa_token
-from jwt_token import create_access_token, verify_token, get_current_user, oauth2_scheme
+from jwt_token import create_access_token, verify_token, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
+from fastapi import Header
+from fastapi import Cookie
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db():
     db = SessionLocal()
@@ -34,41 +45,65 @@ def register(user: UserCreate , db: Session = Depends(get_db)):
         mfa_secret=generate_mfa_secret(),
     )
     uri = get_totp_uri(user.username, secret=db_user.mfa_secret)
-
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return uri
+    return JSONResponse(content={"uri": uri})
 
 @app.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    
-    db_user = db.query(User).filter(User.username == user.username).first()
+def login(request_model: UserLogin, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.username == request_model.username).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    if not verify_password(user.password, db_user.password):
-        raise HTTPException(status_code=401, detail="Invalid password")
-    if not verify_mfa_token(db_user.mfa_secret, user.mfa_code):
+    if not verify_password(request_model.password, db_user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not verify_mfa_token(db_user.mfa_secret, request_model.mfa_code):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
+    
     access_token = create_access_token(data={"sub": db_user.username})
-    return {"access_token": access_token}
+    return JSONResponse(content={"access_token": access_token})
+
+# @app.get("/verify-mfa")
+# def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(get_db)):
+#     db_user = db.query(User).filter(User.username == username).first()
+#     if not db_user:
+#         raise HTTPException(status_code=404, detail="User not found")
+#     if not verify_mfa_token(db_user.mfa_secret, mfa_code):
+#         raise HTTPException(status_code=401, detail="Invalid MFA code")
+#     access_token = create_access_token(data={"sub": db_user.username})
+#     response = JSONResponse(content={"access_token": access_token})
+#     return response
 
 
 @app.put("/forget-password")
 def forget_password(request_model: ForgetPassword ,db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == request_model.username).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    db_user.password = hash_password(request_model.new_password)
+    # if not db_user:
+    #     raise HTTPException(status_code=404, detail="User not found")
+    if request_model.password != request_model.repeat_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+    if not request_model.password or not request_model.repeat_password:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
+    db_user.password = hash_password(request_model.password)
     db.commit()
     db.refresh(db_user)
     return {"message": "Password updated successfully"}
 
-@app.get("/user/{username}")
-def get_user(username: str, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+@app.get("/verify-user")
+def verify_user(username: str, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == username).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User exists"}
+
+@app.get("/user")
+def get_user(username: str, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.username == username).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # user need to stored in local storage
+    # fetch user details from the local storage
     return {"User Found"}
 
 
@@ -80,42 +115,4 @@ def delete_user(request_model: DeleteUser,db: Session = Depends(get_db), current
     db.delete(db_user)      
     db.commit()
     return {"message": f"{request_model.username} User deleted successfully"}
-
-
-
-
-
-
-
-
-# from GitIssues.schemas import GithubIssue
-# import httpx
-# app = FastAPI()
-
-# GITHUB_TOKEN = "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"
-# GITHUB_REPO = "rckr2710/RetriFix-App"
-
-# @app.post("/github-issue")
-# async def create_github_issue(issue: GithubIssue):
-#     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    
-#     headers = {
-#         "Authorization": f"token {GITHUB_TOKEN}",
-#         "Accept": "application/vnd.github+json"
-#     }
-
-#     data = {
-#         "title": issue.title,
-#         "body": issue.body
-#     }
-
-#     async with httpx.AsyncClient(timeout=30.0) as client:
-#         response = await client.post(url, headers=headers, json=data)
-
-#     if response.status_code == 201:
-#         return {
-#             "message": "Issue created successfully",
-#             "url": response.json().get("html_url")
-#         }
-#     else:
-#         raise HTTPException(status_code=response.status_code, detail=response.json())
+   

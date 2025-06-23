@@ -11,7 +11,8 @@ class UserLogin(BaseModel):
 
 class ForgetPassword(BaseModel):
     username: str
-    new_password: str
+    password: str
+    repeat_password: str
 
 class DeleteUser(BaseModel):
     username: str
