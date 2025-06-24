@@ -1,4 +1,6 @@
+from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Header, Security
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 from fastapi.responses import JSONResponse
@@ -9,6 +11,10 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
 from fastapi import Header
 from fastapi import Cookie
+from ldap3 import Server, Connection, ALL
+from ldap3.core.exceptions import LDAPException, LDAPBindError
+from ldap3.utils.hashed import hashed
+from passlib.hash import ldap_salted_sha1
 
 app = FastAPI()
 
@@ -32,62 +38,155 @@ def get_db():
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
-    
 
-# @app.post("/register")
-# def register(user: UserCreate , db: Session = Depends(get_db)):
-#     existing_user = db.query(User).filter(User.username == user.username).first()
-#     if existing_user:
-#         raise HTTPException(status_code=400, detail="Username already exists")
-#     db_user = User(
-#         username=user.username,
-#         password=hash_password(user.password),
-#         mfa_secret=generate_mfa_secret(),
-#     )
-#     uri = get_totp_uri(user.username, secret=db_user.mfa_secret)
-#     db.add(db_user)
-#     db.commit()
-#     db.refresh(db_user)
-#     return JSONResponse(content={"uri": uri})
+
+LDAP_SERVER = "ldap://localhost:389"
+ADMIN_DN = "cn=admin,dc=local"
+ADMIN_PASSWORD = "admin"
+BASE_DN = "dc=local"
+
 
 
 @app.post("/login")
-def login(request_model: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == request_model.username).first()
-    if not db_user:
-        # New user: register and send MFA QR
-        mfa_secret = generate_mfa_secret()
-        db_user = User(
-            username=request_model.username,
-            mfa_secret=mfa_secret
-        )
-        uri = get_totp_uri(request_model.username, secret=mfa_secret)
+def ldap_login(username: str,password: str,db: Session = Depends(get_db)):
+    user_dn = f"uid={username},{BASE_DN}"
+    try:
+        server = Server(LDAP_SERVER, get_info=ALL)
+        conn = Connection(server, user=user_dn, password=password)
 
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        # Set cookies for username
-        response = JSONResponse(content={"message": "New user registered", "MFAuri": uri})
+        if not conn.bind():
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
+        # {"message": f"User {request.username} authenticated successfully"}
+        db_user = db.query(User).filter(User.username == username).first()
+        if not db_user:
+            # New user: register and send MFA QR
+            mfa_secret = generate_mfa_secret()
+            db_user = User(
+                username=username,
+                mfa_secret=mfa_secret
+            )
+            uri = get_totp_uri(username, secret=mfa_secret)
+
+            db.add(db_user)
+            db.commit()
+            db.refresh(db_user)
+            # Set cookies for username
+            response = JSONResponse(content={"message": "New user registered", "MFAuri": uri})
+            response.set_cookie(
+                key="username",
+                value=username,
+                httponly=True,
+                max_age=1800,
+                secure=False,
+                samesite="Lax",
+            )
+            return response
+        # Existing user: proceed to MFA verification step
+        response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
         response.set_cookie(
             key="username",
-            value=request_model.username,
+            value=username,
             httponly=True,
             max_age=1800,
             secure=False,
             samesite="Lax",
         )
         return response
-    # Existing user: proceed to MFA verification step
-    response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
-    response.set_cookie(
-        key="username",
-        value=request_model.username,
-        httponly=True,
-        max_age=1800,
-        secure=False,
-        samesite="Lax",
-    )
-    return response
+
+    except LDAPException:
+        raise HTTPException(status_code=401, detail="LDAP authentication failed")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    
+    
+
+
+# class SimpleUser(BaseModel):
+#     username: str
+#     password: str
+
+# @app.post("/users")
+# def add_simple_users(users: List[SimpleUser]):
+#     try:
+#         server = Server(LDAP_SERVER, get_info=ALL)
+#         conn = Connection(server, user=ADMIN_DN, password=ADMIN_PASSWORD, auto_bind=True)
+
+#         added = []
+#         for user in users:
+#             user_dn = f"uid={user.username},{BASE_DN}"
+
+#             # Optional: skip if already exists
+#             if conn.search(BASE_DN, f"(uid={user.username})", attributes=["uid"]):
+#                 continue
+
+#             hashed_password = ldap_salted_sha1.hash(user.password)
+
+#             attributes = {
+#                 "objectClass": ["inetOrgPerson"],
+#                 "uid": user.username,
+#                 "cn": user.username,
+#                 "sn": user.username,
+#                 "userPassword": hashed_password,
+#             }
+
+#             conn.add(user_dn, attributes=attributes)
+
+#             if conn.result["description"] == "success":
+#                 added.append(user.username)
+#             else:
+#                 raise HTTPException(status_code=500, detail=f"Failed to add {user.username}: {conn.result}")
+
+#         return {"message": "Users added successfully", "added": added}
+
+#     except LDAPException as e:
+#         raise HTTPException(status_code=500, detail=f"LDAP error: {str(e)}")
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+
+
+
+# @app.post("/login")
+# def login(request_model: UserLogin, db: Session = Depends(get_db)):
+#     db_user = db.query(User).filter(User.username == request_model.username).first()
+#     if not db_user:
+#         # New user: register and send MFA QR
+#         mfa_secret = generate_mfa_secret()
+#         db_user = User(
+#             username=request_model.username,
+#             mfa_secret=mfa_secret
+#         )
+#         uri = get_totp_uri(request_model.username, secret=mfa_secret)
+
+#         db.add(db_user)
+#         db.commit()
+#         db.refresh(db_user)
+#         # Set cookies for username
+#         response = JSONResponse(content={"message": "New user registered", "MFAuri": uri})
+#         response.set_cookie(
+#             key="username",
+#             value=request_model.username,
+#             httponly=True,
+#             max_age=1800,
+#             secure=False,
+#             samesite="Lax",
+#         )
+#         return response
+#     # Existing user: proceed to MFA verification step
+#     response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
+#     response.set_cookie(
+#         key="username",
+#         value=request_model.username,
+#         httponly=True,
+#         max_age=1800,
+#         secure=False,
+#         samesite="Lax",
+#     )
+#     return response
 
 @app.get("/verify-mfa")
 def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(get_db)):
@@ -111,34 +210,6 @@ def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(
     )
     return response
 
-
-
-
-
-@app.put("/forget-password")
-def forget_password(request_model: ForgetPassword ,db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == request_model.username).first()
-    # if not db_user:
-    #     raise HTTPException(status_code=404, detail="User not found")
-    if request_model.password != request_model.repeat_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
-    if not request_model.password or not request_model.repeat_password:
-        raise HTTPException(status_code=400, detail="Password cannot be empty")
-    db_user.password = hash_password(request_model.password)
-    db.commit()
-    db.refresh(db_user)
-    return {"message": "Password updated successfully"}
-
-@app.get("/verify-user")
-def verify_user(username: str, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == username).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    # user need to stored in local storage
-    # fetch user details from the local storage
-    return {"message": "User exists"}
-    
-   
 @app.post("/logout")
 def logout():
     response = JSONResponse(content={"message": "Logged out, cookies cleared"})
