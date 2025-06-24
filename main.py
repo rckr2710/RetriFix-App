@@ -7,14 +7,16 @@ from fastapi.responses import JSONResponse
 from models import User
 from auth import hash_password, verify_password, generate_mfa_secret, get_totp_uri, verify_mfa_token
 from jwt_token import create_access_token, verify_token, get_current_user
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
-from fastapi import Header
+# from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+# from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
+# from fastapi import Header
 from fastapi import Cookie
 from ldap3 import Server, Connection, ALL
 from ldap3.core.exceptions import LDAPException, LDAPBindError
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
+
+from schemas import UserLogin
 
 app = FastAPI()
 
@@ -48,25 +50,25 @@ BASE_DN = "dc=local"
 
 
 @app.post("/login")
-def ldap_login(username: str,password: str,db: Session = Depends(get_db)):
-    user_dn = f"uid={username},{BASE_DN}"
+def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
+    user_dn = f"uid={user.username},{BASE_DN}"
     try:
         server = Server(LDAP_SERVER, get_info=ALL)
-        conn = Connection(server, user=user_dn, password=password)
+        conn = Connection(server, user=user_dn, password=user.password)
 
         if not conn.bind():
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
         # {"message": f"User {request.username} authenticated successfully"}
-        db_user = db.query(User).filter(User.username == username).first()
+        db_user = db.query(User).filter(User.username == user.username).first()
         if not db_user:
             # New user: register and send MFA QR
             mfa_secret = generate_mfa_secret()
             db_user = User(
-                username=username,
+                username=user.username,
                 mfa_secret=mfa_secret
             )
-            uri = get_totp_uri(username, secret=mfa_secret)
+            uri = get_totp_uri(user.username, secret=mfa_secret)
 
             db.add(db_user)
             db.commit()
@@ -75,7 +77,7 @@ def ldap_login(username: str,password: str,db: Session = Depends(get_db)):
             response = JSONResponse(content={"message": "New user registered", "MFAuri": uri})
             response.set_cookie(
                 key="username",
-                value=username,
+                value=user.username,
                 httponly=True,
                 max_age=1800,
                 secure=False,
@@ -86,7 +88,7 @@ def ldap_login(username: str,password: str,db: Session = Depends(get_db)):
         response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
         response.set_cookie(
             key="username",
-            value=username,
+            value=user.username,
             httponly=True,
             max_age=1800,
             secure=False,
@@ -211,7 +213,7 @@ def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(
     return response
 
 @app.post("/logout")
-def logout():
+def logout(get_current_user: str = Depends(get_current_user)):
     response = JSONResponse(content={"message": "Logged out, cookies cleared"})
     # Clear all known cookies
     response.delete_cookie(key="username")
