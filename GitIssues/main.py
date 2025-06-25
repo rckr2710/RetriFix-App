@@ -14,7 +14,7 @@ app = FastAPI()
 
 GITLAB_PROJECT_ID = "71108768"
 GITLAB_PRIVATE_TOKEN = "glpat-3ykwnhRJE8rKrHkqJ9jE"
-GITLAB_URL = "https://gitlab.com" # or your self-managed GitLab instance URL
+GITLAB_URL = "https://gitlab.com"
 
 
 @app.post("/gitlab-issue")

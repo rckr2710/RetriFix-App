@@ -238,7 +238,7 @@ GITLAB_URL = "https://gitlab.com" # or your self-managed GitLab instance URL
 
 
 @app.post("/gitlab-issue")
-async def create_gitlab_issue(issue: GitLabIssue):
+async def create_gitlab_issue(issue: GitLabIssue,username: str = Cookie(None),get_current_user: str = Depends(get_current_user)):
     """
     Creates a GitLab issue using the GitLab API.
     """
@@ -248,7 +248,11 @@ async def create_gitlab_issue(issue: GitLabIssue):
     }
     data = {
         "title": issue.title,
-        "body": issue.body,
+        "description": issue.description,
+        "labels": "support",
+        "author" : {
+            "username" : username
+        }
     }
 
     try:
