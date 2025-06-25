@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from urllib import request
 from jose import JWTError, jwt
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import Cookie, FastAPI, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 
 SECRET_KEY = "RetriFix-secret-key"
@@ -24,23 +24,15 @@ def verify_token(token: str):
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 # def get_current_user(token: str = Depends(oauth2_scheme)):
-#     # payload = verify_token(token)
-#     # if not payload:
-#     #     raise HTTPException(status_code=401, detail="Invalid or expired token")
-#     # return payload["sub"]
+#     payload = verify_token(token)
+#     if not payload:
+#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+#     return payload["sub"]
 
-def get_current_user(request: Request):
-    token = None
-    if not token:
-        token = request.cookies.get("access_token")
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    payload = verify_token(token)
+def get_current_user(access_token: str = Cookie(None)):
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Missing token in cookie")
+    payload = verify_token(access_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-
     return payload["sub"]
-
-# Accept token from localstorage

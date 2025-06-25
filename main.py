@@ -85,10 +85,19 @@ def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
             )
             return response
         # Existing user: proceed to MFA verification step
+        access_token= create_access_token(data={"sub": user.username})
         response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
         response.set_cookie(
             key="username",
             value=user.username,
+            httponly=True,
+            max_age=1800,
+            secure=False,
+            samesite="Lax",
+        )
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
             httponly=True,
             max_age=1800,
             secure=False,
@@ -218,5 +227,4 @@ def logout(get_current_user: str = Depends(get_current_user)):
     # Clear all known cookies
     response.delete_cookie(key="username")
     response.delete_cookie(key="access_token")
-    
     return response
