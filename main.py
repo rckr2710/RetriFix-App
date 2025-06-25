@@ -1,7 +1,9 @@
 from typing import List
-from fastapi import FastAPI, Depends, HTTPException, Header, Security
+from fastapi import FastAPI, Depends, HTTPException, Header, Security, requests
+import httpx
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from GitIssues.schemas import GitLabIssue
 from database import SessionLocal, engine, Base
 from fastapi.responses import JSONResponse
 from models import User
@@ -228,3 +230,34 @@ def logout(get_current_user: str = Depends(get_current_user)):
     response.delete_cookie(key="username")
     response.delete_cookie(key="access_token")
     return response
+
+
+GITLAB_PROJECT_ID = "71108768"
+GITLAB_PRIVATE_TOKEN = "glpat-3ykwnhRJE8rKrHkqJ9jE"
+GITLAB_URL = "https://gitlab.com" # or your self-managed GitLab instance URL
+
+
+@app.post("/gitlab-issue")
+async def create_gitlab_issue(issue: GitLabIssue):
+    """
+    Creates a GitLab issue using the GitLab API.
+    """
+    url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues"
+    headers = {
+        "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
+    }
+    data = {
+        "title": issue.title,
+        "body": issue.body,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, headers=headers, data=data)
+        response.raise_for_status()
+        issue_data = response.json()
+        return {"message": "Issue created successfully", "issue_id": issue_data['iid']}
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Request to GitLab timed out")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))

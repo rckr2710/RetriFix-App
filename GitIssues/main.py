@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi import FastAPI, Depends, HTTPException, Security, requests
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 from fastapi.responses import JSONResponse
@@ -7,35 +7,37 @@ from auth import hash_password, verify_password, generate_mfa_secret, get_totp_u
 from jwt_token import create_access_token, verify_token, get_current_user, oauth2_scheme
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
-from GitIssues.schemas import GithubIssue
+from GitIssues.schemas import GitLabIssue, GithubIssue
 import httpx
 app = FastAPI()
 
 
-GITHUB_TOKEN = "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"
-GITHUB_REPO = "rckr2710/RetriFix-App"
+GITLAB_PROJECT_ID = "71108768"
+GITLAB_PRIVATE_TOKEN = "glpat-3ykwnhRJE8rKrHkqJ9jE"
+GITLAB_URL = "https://gitlab.com" # or your self-managed GitLab instance URL
 
-@app.post("/github-issue")
-async def create_github_issue(issue: GithubIssue):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    
+
+@app.post("/gitlab-issue")
+async def create_gitlab_issue(issue: GitLabIssue):
+    """
+    Creates a GitLab issue using the GitLab API.
+    """
+    url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues"
     headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
+        "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
     }
-
     data = {
         "title": issue.title,
-        "body": issue.body
+        "body": issue.body,
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, headers=headers, json=data)
-
-    if response.status_code == 201:
-        return {
-            "message": "Issue created successfully",
-            "url": response.json().get("html_url")
-        }
-    else:
-        raise HTTPException(status_code=response.status_code, detail=response.json())
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, headers=headers, data=data)
+        response.raise_for_status()
+        issue_data = response.json()
+        return {"message": "Issue created successfully", "issue_id": issue_data['iid']}
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Request to GitLab timed out")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))

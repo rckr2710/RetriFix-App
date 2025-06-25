@@ -1,5 +1,5 @@
 from pydantic import BaseModel
 
-class GithubIssue(BaseModel):
+class GitLabIssue(BaseModel):
     title: str
     body: str
