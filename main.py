@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import FastAPI, Depends, HTTPException, Header, Security, requests
+from fastapi import FastAPI, Depends, Form, HTTPException, Header, Security, requests
 import httpx
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ from ldap3 import Server, Connection, ALL
 from ldap3.core.exceptions import LDAPException, LDAPBindError
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
-
+from fastapi import File, UploadFile
 from schemas import UserLogin
 
 app = FastAPI()
@@ -234,21 +234,33 @@ def logout(get_current_user: str = Depends(get_current_user)):
 
 GITLAB_PROJECT_ID = "71108768"
 GITLAB_PRIVATE_TOKEN = "glpat-3ykwnhRJE8rKrHkqJ9jE"
-GITLAB_URL = "https://gitlab.com" # or your self-managed GitLab instance URL
+GITLAB_URL = "https://gitlab.com"
 
 
 @app.post("/gitlab-issue")
-async def create_gitlab_issue(issue: GitLabIssue,username: str = Cookie(None),get_current_user: str = Depends(get_current_user)):
-    """
-    Creates a GitLab issue using the GitLab API.
-    """
+async def create_gitlab_issue(title: str = Form(...),
+    description: str = Form(...),username: str = Cookie(None),image: UploadFile = File(None),get_current_user: str = Depends(get_current_user)):
+
     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues"
     headers = {
         "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
     }
+    image_markdown = ""
+    if image:
+        contents = await image.read()
+        files = {"file": (image.filename, contents, image.content_type)}
+        async with httpx.AsyncClient(timeout=10) as client:
+            upload_resp = await client.post(
+                f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/uploads",
+                headers=headers,
+                files=files
+            )
+        upload_resp.raise_for_status()
+        image_url = upload_resp.json()["url"]
+        image_markdown = f"\n\n![uploaded image]({GITLAB_URL}{image_url})"
     data = {
-        "title": issue.title,
-        "description": issue.description,
+        "title": title,
+        "description": f"{description}{image_markdown}",
         "labels": "support",
         "author" : {
             "username" : username
