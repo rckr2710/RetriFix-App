@@ -297,3 +297,23 @@ def delete_gitlab_issue(issue_id: int, get_current_user: str = Depends(get_curre
         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.put("/gitlab-issue/close-issue/{issue_id}")
+def close_gitlab_issue(issue_id: int, get_current_user: str = Depends(get_current_user)):
+    if not issue_id:
+        raise HTTPException(status_code=400, detail="Issue ID is required")
+    url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues/{issue_id}"
+    headers = {
+        "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
+    }
+    data = {
+        "state_event": "close"
+    }
+    try:
+        response = httpx.put(url, headers=headers, data=data)
+        response.raise_for_status()
+        return {"message": "Issue closed successfully"}
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Request to GitLab timed out")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
