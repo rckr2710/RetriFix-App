@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, Depends, Form, HTTPException, Header, Security, requests
 import httpx
 from pydantic import BaseModel
@@ -239,7 +239,7 @@ GITLAB_URL = "https://gitlab.com"
 
 @app.post("/gitlab-issue")
 async def create_gitlab_issue(title: str = Form(...),
-    description: str = Form(...),username: str = Cookie(None),image: UploadFile = File(None),get_current_user: str = Depends(get_current_user)):
+    description: str = Form(...),username: str = Cookie(None),image: Optional[UploadFile] = File(None),get_current_user: str = Depends(get_current_user)):
 
     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues"
     headers = {
@@ -250,14 +250,14 @@ async def create_gitlab_issue(title: str = Form(...),
         contents = await image.read()
         files = {"file": (image.filename, contents, image.content_type)}
         async with httpx.AsyncClient(timeout=10) as client:
-            upload_resp = await client.post(
-                f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/uploads",
-                headers=headers,
-                files=files
-            )
-        upload_resp.raise_for_status()
-        image_url = upload_resp.json()["url"]
-        image_markdown = f"\n\n![uploaded image]({GITLAB_URL}{image_url})"
+            upload_url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/uploads"
+            upload_resp = await client.post(upload_url, headers=headers, files=files)
+            if upload_resp.status_code != 201:
+                raise HTTPException(status_code=upload_resp.status_code, detail=upload_resp.text)
+            upload_data = upload_resp.json()
+            image_url = upload_data["url"]
+            image_markdown = f"\n\n![{upload_data['alt']}]({GITLAB_URL}{image_url})"
+
     data = {
         "title": title,
         "description": f"{description}{image_markdown}",
@@ -265,6 +265,8 @@ async def create_gitlab_issue(title: str = Form(...),
         "author" : {
             "username" : username
         }
+        # we need to add list of assignee_ids, for different issues, it should alter
+        # "assignee_ids": [1],
     }
 
     try:
@@ -273,6 +275,24 @@ async def create_gitlab_issue(title: str = Form(...),
         response.raise_for_status()
         issue_data = response.json()
         return {"message": "Issue created successfully", "issue_id": issue_data['iid']}
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Request to GitLab timed out")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.delete("/gitlab-issue/{issue_id}")
+def delete_gitlab_issue(issue_id: int, get_current_user: str = Depends(get_current_user)):
+    if not issue_id:
+        raise HTTPException(status_code=400, detail="Issue ID is required")
+    url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues/{issue_id}"
+    headers = {
+        "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
+    }
+    try:
+        response = httpx.delete(url, headers=headers)
+        response.raise_for_status()
+        return {"message": "Issue deleted successfully"}
     except requests.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
     except requests.exceptions.RequestException as e:
