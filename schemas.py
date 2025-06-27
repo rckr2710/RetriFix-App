@@ -16,3 +16,6 @@ class ForgetPassword(BaseModel):
 
 class DeleteUser(BaseModel):
     username: str
+
+class Search(BaseModel):
+    prompt: str

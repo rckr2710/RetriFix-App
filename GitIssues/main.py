@@ -48,6 +48,7 @@ async def create_gitlab_issue(title: str = Form(...),
         }
         # we need to add list of assignee_ids, for different issues, it should alter
         # "assignee_ids": [1],
+        # "assignee_username": [username],
     }
 
     try:

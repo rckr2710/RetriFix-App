@@ -18,7 +18,7 @@ from ldap3.core.exceptions import LDAPException, LDAPBindError
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
-from schemas import UserLogin
+from schemas import Search, UserLogin
 
 app = FastAPI()
 
@@ -144,6 +144,12 @@ def logout(get_current_user: str = Depends(get_current_user)):
     response.delete_cookie(key="access_token")
     return response
 
+
+@app.get('/search')
+def search(prompt: Search, get_current_user: str = Depends(get_current_user)):
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Please enter the prompt")
+    return prompt
 
 # class SimpleUser(BaseModel):
 #     username: str
