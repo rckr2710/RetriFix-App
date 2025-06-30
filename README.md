@@ -16,7 +16,3 @@
 - **vite.config.js**: Configuration for Vite bundler.
 - **eslint.config.js**: Linting configuration for code quality.
 - **.gitignore**: Specifies files and folders to be ignored by git.
-
----
-
-This structure helps keep your code organized and maintainable as your
