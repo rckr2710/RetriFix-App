@@ -4,9 +4,9 @@ import httpx
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from GitIssues.schemas import GitLabIssue
-from database import SessionLocal, engine, Base
+from database import SessionLocal, engine, Base, get_db
 from fastapi.responses import JSONResponse
-from models import User
+from models import ChatSession, Message, User
 from auth import hash_password, verify_password, generate_mfa_secret, get_totp_uri, verify_mfa_token
 from jwt_token import create_access_token, verify_token, get_current_user
 # from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -18,9 +18,11 @@ from ldap3.core.exceptions import LDAPException, LDAPBindError
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
-from schemas import Search, UserLogin
+from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessageResponse, UserLogin
 
 app = FastAPI()
+
+# Base.metadata.create_all(bind=engine)
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -32,12 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# def get_db():
+#     db = SessionLocal()
+#     try:
+#         yield db
+#     finally:
+#         db.close()
 
 @app.on_event("startup")
 def on_startup():
@@ -136,225 +138,82 @@ def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(
     )
     return response
 
-@app.post("/logout")
-def logout(get_current_user: str = Depends(get_current_user)):
-    response = JSONResponse(content={"message": "Logged out, cookies cleared"})
+
+@app.post("/chats", response_model=ChatResponse)
+def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    new_chat = ChatSession(user_id=user.id, title=req.title)
+    db.add(new_chat)
+    db.commit()
+    db.refresh(new_chat)
+    return new_chat
+
+# Get all chat sessions for user
+@app.get("/chats", response_model=List[ChatResponse])
+def list_chats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).order_by(ChatSession.updated_at.desc()).all()
+    return chats
+
+# Delete a chat session (soft delete)
+@app.delete("/chats/{chat_id}")
+def delete_chat(chat_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat.is_deleted = True
+    db.commit()
+    return {"message": "Chat deleted"}
+
+# Get messages for a specific chat
+@app.get("/chats/{chat_id}/messages", response_model=List[MessageResponse])
+def get_chat_messages(chat_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat.messages
+
+
+
+def generate_assistant_response(messages: List[Message]) -> str:
+    """
+    Dummy model response generator for testing.
+    Returns a mock reply based on the last user message.
+    """
+    last_user_message = next((m for m in reversed(messages) if m.role == "user"), None)
+    if last_user_message:
+        return f"Mock reply to: '{last_user_message.content}'"
+    return "Hello! This is a test response."
+
+
+@app.post("/chats/{chat_id}/messages", response_model=MessageResponse)
+def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Session = Depends(get_db),user: User = Depends(get_current_user)):
+    chat = db.query(ChatSession).filter(
+        ChatSession.id == chat_id,
+        ChatSession.user_id == user.id,
+        ChatSession.is_deleted == False
+    ).first()
+
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found or access denied")
+    user_msg = Message(chat_id=chat_id,role="user",content=req.content)
+    db.add(user_msg)
+    db.commit()
+    db.refresh(user_msg)
+
+    db.refresh(chat)
+    assistant_reply = generate_assistant_response(chat.messages)
+    # Store ai message
+    assistant_msg = Message(chat_id=chat_id,role="ai",content=assistant_reply)
+    db.add(assistant_msg)
+    db.commit()
+    db.refresh(assistant_msg)
+
+    return assistant_msg
+
+@app.delete("/logout")
+def logout(user: User = Depends(get_current_user)):
+    response = JSONResponse(content={"message": f"User '{user.username}' logged out, cookies cleared."})
     # Clear all known cookies
     response.delete_cookie(key="username")
     response.delete_cookie(key="access_token")
+    
     return response
-
-
-@app.get('/search')
-def search(prompt: Search, get_current_user: str = Depends(get_current_user)):
-    if not prompt:
-        raise HTTPException(status_code=404, detail="Please enter the prompt")
-    return prompt
-
-# class SimpleUser(BaseModel):
-#     username: str
-#     password: str
-
-# @app.post("/users")
-# def add_simple_users(users: List[SimpleUser]):
-#     try:
-#         server = Server(LDAP_SERVER, get_info=ALL)
-#         conn = Connection(server, user=ADMIN_DN, password=ADMIN_PASSWORD, auto_bind=True)
-
-#         added = []
-#         for user in users:
-#             user_dn = f"uid={user.username},{BASE_DN}"
-
-#             # Optional: skip if already exists
-#             if conn.search(BASE_DN, f"(uid={user.username})", attributes=["uid"]):
-#                 continue
-
-#             hashed_password = ldap_salted_sha1.hash(user.password)
-
-#             attributes = {
-#                 "objectClass": ["inetOrgPerson"],
-#                 "uid": user.username,
-#                 "cn": user.username,
-#                 "sn": user.username,
-#                 "userPassword": hashed_password,
-#             }
-
-#             conn.add(user_dn, attributes=attributes)
-
-#             if conn.result["description"] == "success":
-#                 added.append(user.username)
-#             else:
-#                 raise HTTPException(status_code=500, detail=f"Failed to add {user.username}: {conn.result}")
-
-#         return {"message": "Users added successfully", "added": added}
-
-#     except LDAPException as e:
-#         raise HTTPException(status_code=500, detail=f"LDAP error: {str(e)}")
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-
-
-
-
-
-# @app.post("/login")
-# def login(request_model: UserLogin, db: Session = Depends(get_db)):
-#     db_user = db.query(User).filter(User.username == request_model.username).first()
-#     if not db_user:
-#         # New user: register and send MFA QR
-#         mfa_secret = generate_mfa_secret()
-#         db_user = User(
-#             username=request_model.username,
-#             mfa_secret=mfa_secret
-#         )
-#         uri = get_totp_uri(request_model.username, secret=mfa_secret)
-
-#         db.add(db_user)
-#         db.commit()
-#         db.refresh(db_user)
-#         # Set cookies for username
-#         response = JSONResponse(content={"message": "New user registered", "MFAuri": uri})
-#         response.set_cookie(
-#             key="username",
-#             value=request_model.username,
-#             httponly=True,
-#             max_age=1800,
-#             secure=False,
-#             samesite="Lax",
-#         )
-#         return response
-#     # Existing user: proceed to MFA verification step
-#     response = JSONResponse(content={"message": "Existing user, proceed to MFA verification"})
-#     response.set_cookie(
-#         key="username",
-#         value=request_model.username,
-#         httponly=True,
-#         max_age=1800,
-#         secure=False,
-#         samesite="Lax",
-#     )
-#     return response
-
-
-
-
-# GITLAB_PROJECT_ID = "71108768"
-# GITLAB_PRIVATE_TOKEN = "glpat-3ykwnhRJE8rKrHkqJ9jE"
-# GITLAB_URL = "https://gitlab.com"
-
-
-# @app.post("/gitlab-issue")
-# async def create_gitlab_issue(title: str = Form(...),
-#     description: str = Form(...),username: str = Cookie(None),image: Optional[UploadFile] = File(None),get_current_user: str = Depends(get_current_user)):
-
-#     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues"
-#     headers = {
-#         "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
-#     }
-#     image_markdown = ""
-#     if image:
-#         contents = await image.read()
-#         files = {"file": (image.filename, contents, image.content_type)}
-#         async with httpx.AsyncClient(timeout=10) as client:
-#             upload_url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/uploads"
-#             upload_resp = await client.post(upload_url, headers=headers, files=files)
-#             if upload_resp.status_code != 201:
-#                 raise HTTPException(status_code=upload_resp.status_code, detail=upload_resp.text)
-#             upload_data = upload_resp.json()
-#             image_url = upload_data["url"]
-#             image_markdown = f"\n\n![{upload_data['alt']}]({GITLAB_URL}{image_url})"
-
-#     data = {
-#         "title": title,
-#         "description": f"{description}{image_markdown}",
-#         "labels": "support",
-#         "author" : {
-#             "username" : username
-#         }
-#         # we need to add list of assignee_ids, for different issues, it should alter
-#         # "assignee_ids": [1],
-#     }
-
-#     try:
-#         async with httpx.AsyncClient(timeout=10) as client:
-#             response = await client.post(url, headers=headers, data=data)
-#         response.raise_for_status()
-#         issue_data = response.json()
-#         return {"message": "Issue created successfully", "issue_id": issue_data['iid']}
-#     except requests.exceptions.Timeout:
-#         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
-#     except requests.exceptions.RequestException as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-    
-
-# @app.delete("/gitlab-issue/{issue_id}")
-# def delete_gitlab_issue(issue_id: int, get_current_user: str = Depends(get_current_user)):
-#     if not issue_id:
-#         raise HTTPException(status_code=400, detail="Issue ID is required")
-#     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues/{issue_id}"
-#     headers = {
-#         "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
-#     }
-#     try:
-#         response = httpx.delete(url, headers=headers)
-#         response.raise_for_status()
-#         return {"message": "Issue deleted successfully"}
-#     except requests.exceptions.Timeout:
-#         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
-#     except requests.exceptions.RequestException as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-    
-# @app.put("/gitlab-issue/close-issue/{issue_id}")
-# def close_gitlab_issue(issue_id: int, get_current_user: str = Depends(get_current_user)):
-#     if not issue_id:
-#         raise HTTPException(status_code=400, detail="Issue ID is required")
-#     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues/{issue_id}"
-#     headers = {
-#         "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
-#     }
-#     data = {
-#         "state_event": "close"
-#     }
-#     try:
-#         response = httpx.put(url, headers=headers, data=data)
-#         response.raise_for_status()
-#         return {"message": "Issue closed successfully"}
-#     except requests.exceptions.Timeout:
-#         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
-#     except requests.exceptions.RequestException as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-    
-# @app.put("/gitlab-issue/edit-issue/{issue_id}")
-# async def edit_gitlab_issue(issue_id: int, title: str = Form(...), description: str = Form(...),image: Optional[UploadFile] = File(None) , get_current_user: str = Depends(get_current_user)):
-#     if not issue_id:
-#         raise HTTPException(status_code=400, detail="Issue ID is required")
-#     url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/issues/{issue_id}"
-#     headers = {
-#         "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN,
-#     }
-#     image_markdown = ""
-#     if image:
-#         contents = await image.read()
-#         files = {"file": (image.filename, contents, image.content_type)}
-#         async with httpx.AsyncClient(timeout=10) as client:
-#             upload_url = f"{GITLAB_URL}/api/v4/projects/{GITLAB_PROJECT_ID}/uploads"
-#             upload_resp = await client.post(upload_url, headers=headers, files=files)
-#             if upload_resp.status_code != 201:
-#                 raise HTTPException(status_code=upload_resp.status_code, detail=upload_resp.text)
-#             upload_data = upload_resp.json()
-#             image_url = upload_data["url"]
-#             image_markdown = f"\n\n![{upload_data['alt']}]({GITLAB_URL}{image_url})"
-#     data = {
-#         "title": title,
-#         "description": f"{description}{image_markdown}",
-#         "type" : "ISSUE"
-#     }
-#     try:
-#         response = httpx.put(url, headers=headers, data=data)
-#         response.raise_for_status()
-#         return {"message": "Issue updated successfully"}
-#     except requests.exceptions.Timeout:
-#         raise HTTPException(status_code=504, detail="Request to GitLab timed out")
-#     except requests.exceptions.RequestException as e:
-#         raise HTTPException(status_code=500, detail=str(e))    
