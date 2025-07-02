@@ -301,6 +301,7 @@ async def create_message_with_response(
 
     return ai_msg.content
 
+
 @app.delete("/logout")
 def logout(user: User = Depends(get_current_user)):
     response = JSONResponse(content={"message": f"User '{user.username}' logged out, cookies cleared."})
