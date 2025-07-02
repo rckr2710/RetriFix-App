@@ -51,6 +51,8 @@ ADMIN_DN = "cn=admin,dc=local"
 ADMIN_PASSWORD = "admin"
 BASE_DN = "dc=local"
 
+# To list users in ldap
+# ldapsearch -x -H ldap://localhost -D "cn=admin,dc=local" -w admin -b "dc=local"
 
 
 @app.post("/add-users")
