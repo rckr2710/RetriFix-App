@@ -7,3 +7,4 @@ __pycache__/
 # Byte-compiled files
 *.pyc
 # Distribution / packaging
+.env

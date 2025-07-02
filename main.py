@@ -11,9 +11,6 @@ from fastapi.responses import JSONResponse
 from models import ChatSession, Message, User
 from auth import hash_password, verify_password, generate_mfa_secret, get_totp_uri, verify_mfa_token
 from jwt_token import create_access_token, verify_token, get_current_user
-# from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-# from schemas import DeleteUser, UserCreate, UserLogin, ForgetPassword
-# from fastapi import Header
 from fastapi import Cookie
 from ldap3 import Server, Connection, ALL
 from ldap3.core.exceptions import LDAPException
@@ -21,6 +18,7 @@ from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
 from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessagePairResponse, MessageResponse, UserLogin, LdapUser
+from config import Settings
 
 app = FastAPI()
 
@@ -45,13 +43,14 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
+    # Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
 
-LDAP_SERVER = "ldap://localhost:389"
-ADMIN_DN = "cn=admin,dc=local"
-ADMIN_PASSWORD = "admin"
-BASE_DN = "dc=local"
+# LDAP_SERVER = "ldap://localhost:389"
+# ADMIN_DN = "cn=admin,dc=local"
+# ADMIN_PASSWORD = "admin"
+# BASE_DN = "dc=local"
 
 # To list users in ldap
 # ldapsearch -x -H ldap://localhost -D "cn=admin,dc=local" -w admin -b "dc=local"
@@ -60,14 +59,14 @@ BASE_DN = "dc=local"
 @app.post("/add-users")
 def add_users(users: List[LdapUser]):
     try:
-        server = Server(LDAP_SERVER, get_info=ALL)
-        conn = Connection(server, user=ADMIN_DN, password=ADMIN_PASSWORD, auto_bind=True)
+        server = Server(Settings.LDAP_SERVER, get_info=ALL)
+        conn = Connection(server, user=Settings.ADMIN_DN, password=Settings.ADMIN_PASSWORD, auto_bind=True)
         added = []
         for user in users:
-            user_dn = f"uid={user.username},{BASE_DN}"
+            user_dn = f"uid={user.username},{Settings.BASE_DN}"
 
             # Check if user already exists
-            if conn.search(BASE_DN, f"(uid={user.username})", attributes=["uid"]):
+            if conn.search(Settings.BASE_DN, f"(uid={user.username})", attributes=["uid"]):
                 continue  # skip existing
             attributes = {
                 "objectClass": ["inetOrgPerson"],
@@ -90,9 +89,9 @@ def add_users(users: List[LdapUser]):
 
 @app.post("/login")
 def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
-    user_dn = f"uid={user.username},{BASE_DN}"
+    user_dn = f"uid={user.username},{Settings.BASE_DN}"
     try:
-        server = Server(LDAP_SERVER, get_info=ALL)
+        server = Server(Settings.LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=user_dn, password=user.password)
         if not conn.bind():
             raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -217,39 +216,13 @@ def generate_assistant_response(messages: List[Message]) -> str:
     return "Hello! This is a test response."
 
 
-# @app.post("/chats/{chat_id}/messages", response_model=MessageResponse)
-# def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Session = Depends(get_db),user: User = Depends(get_current_user)):
-#     chat = db.query(ChatSession).filter(
-#         ChatSession.id == chat_id,
-#         ChatSession.user_id == user.id,
-#         ChatSession.is_deleted == False
-#     ).first()
 
-#     if not chat:
-#         raise HTTPException(status_code=404, detail="Chat not found")
-#     user_msg = Message(chat_id=chat_id,role="user",content=req.content)
-#     db.add(user_msg)
-#     db.commit()
-#     db.refresh(user_msg)
-
-#     db.refresh(chat)
-
-#     # we need to invoke the AI model to generate a response
-#     ai_reply = generate_assistant_response(chat.messages)
-#     # Store ai message
-#     ai_msg = Message(chat_id=chat_id,role="ai",content=ai_reply)
-#     db.add(ai_msg)
-#     db.commit()
-#     db.refresh(ai_msg)
-
-#     return ai_msg
-
-UPLOAD_DIR = "uploaded_images"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# UPLOAD_DIR = "uploaded_images"
+os.makedirs(Settings.UPLOAD_DIR, exist_ok=True)
 
 @app.post("/chats/{chat_id}/messages")
 async def create_message_with_response(
-    chat_id: int,
+    chat_id: str,
     content: str = Form(...),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -269,7 +242,7 @@ async def create_message_with_response(
     if file:
         ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid4().hex}{ext}"
-        path = os.path.join(UPLOAD_DIR, filename)
+        path = os.path.join(Settings.UPLOAD_DIR, filename)
         with open(path, "wb") as f:
             f.write(await file.read())
         image_url = f"/images/{filename}"
