@@ -34,23 +34,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
 
 @app.on_event("startup")
 def on_startup():
     # Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-
-
-# LDAP_SERVER = "ldap://localhost:389"
-# ADMIN_DN = "cn=admin,dc=local"
-# ADMIN_PASSWORD = "admin"
-# BASE_DN = "dc=local"
 
 # To list users in ldap
 # ldapsearch -x -H ldap://localhost -D "cn=admin,dc=local" -w admin -b "dc=local"
