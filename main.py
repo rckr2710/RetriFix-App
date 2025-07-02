@@ -18,7 +18,7 @@ from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
 from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessagePairResponse, MessageResponse, UserLogin, LdapUser
-from config import Settings
+from config import settings
 
 app = FastAPI()
 
@@ -59,14 +59,14 @@ def on_startup():
 @app.post("/add-users")
 def add_users(users: List[LdapUser]):
     try:
-        server = Server(Settings.LDAP_SERVER, get_info=ALL)
-        conn = Connection(server, user=Settings.ADMIN_DN, password=Settings.ADMIN_PASSWORD, auto_bind=True)
+        server = Server(settings.LDAP_SERVER, get_info=ALL)
+        conn = Connection(server, user=settings.ADMIN_DN, password=settings.ADMIN_PASSWORD, auto_bind=True)
         added = []
         for user in users:
-            user_dn = f"uid={user.username},{Settings.BASE_DN}"
+            user_dn = f"uid={user.username},{settings.BASE_DN}"
 
             # Check if user already exists
-            if conn.search(Settings.BASE_DN, f"(uid={user.username})", attributes=["uid"]):
+            if conn.search(settings.BASE_DN, f"(uid={user.username})", attributes=["uid"]):
                 continue  # skip existing
             attributes = {
                 "objectClass": ["inetOrgPerson"],
@@ -89,9 +89,9 @@ def add_users(users: List[LdapUser]):
 
 @app.post("/login")
 def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
-    user_dn = f"uid={user.username},{Settings.BASE_DN}"
+    user_dn = f"uid={user.username},{settings.BASE_DN}"
     try:
-        server = Server(Settings.LDAP_SERVER, get_info=ALL)
+        server = Server(settings.LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=user_dn, password=user.password)
         if not conn.bind():
             raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -218,7 +218,7 @@ def generate_assistant_response(messages: List[Message]) -> str:
 
 
 # UPLOAD_DIR = "uploaded_images"
-os.makedirs(Settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 @app.post("/chats/{chat_id}/messages")
 async def create_message_with_response(
@@ -242,7 +242,7 @@ async def create_message_with_response(
     if file:
         ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid4().hex}{ext}"
-        path = os.path.join(Settings.UPLOAD_DIR, filename)
+        path = os.path.join(settings.UPLOAD_DIR, filename)
         with open(path, "wb") as f:
             f.write(await file.read())
         image_url = f"/images/{filename}"
