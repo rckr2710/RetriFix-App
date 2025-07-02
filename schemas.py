@@ -1,5 +1,6 @@
+
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -28,6 +29,7 @@ class MessageResponse(BaseModel):
     id: int
     role: str
     content: str
+    image_url: Optional[str]
     created_at: datetime
 
     class Config:
@@ -37,3 +39,6 @@ class MessageResponse(BaseModel):
 class MessageCreateRequest(BaseModel):
     role: Optional[str] = "user"
     content: str
+
+class MessagePairResponse(BaseModel):
+    messages: List[MessageResponse]

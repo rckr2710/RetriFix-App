@@ -29,6 +29,7 @@ class Message(Base):
     chat_id = Column(Integer, ForeignKey("chat_sessions.id"))
     role = Column(String, nullable=False)
     content = Column(Text, nullable=False)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chat = relationship("ChatSession", back_populates="messages")

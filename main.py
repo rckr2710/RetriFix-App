@@ -1,4 +1,6 @@
+import os
 from typing import List, Optional
+from uuid import uuid4
 from fastapi import FastAPI, Depends, Form, HTTPException, Header, Security, requests
 import httpx
 from pydantic import BaseModel
@@ -18,7 +20,7 @@ from ldap3.core.exceptions import LDAPException
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
-from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessageResponse, UserLogin, LdapUser
+from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessagePairResponse, MessageResponse, UserLogin, LdapUser
 
 app = FastAPI()
 
@@ -215,8 +217,44 @@ def generate_assistant_response(messages: List[Message]) -> str:
     return "Hello! This is a test response."
 
 
-@app.post("/chats/{chat_id}/messages", response_model=MessageResponse)
-def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Session = Depends(get_db),user: User = Depends(get_current_user)):
+# @app.post("/chats/{chat_id}/messages", response_model=MessageResponse)
+# def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Session = Depends(get_db),user: User = Depends(get_current_user)):
+#     chat = db.query(ChatSession).filter(
+#         ChatSession.id == chat_id,
+#         ChatSession.user_id == user.id,
+#         ChatSession.is_deleted == False
+#     ).first()
+
+#     if not chat:
+#         raise HTTPException(status_code=404, detail="Chat not found")
+#     user_msg = Message(chat_id=chat_id,role="user",content=req.content)
+#     db.add(user_msg)
+#     db.commit()
+#     db.refresh(user_msg)
+
+#     db.refresh(chat)
+
+#     # we need to invoke the AI model to generate a response
+#     ai_reply = generate_assistant_response(chat.messages)
+#     # Store ai message
+#     ai_msg = Message(chat_id=chat_id,role="ai",content=ai_reply)
+#     db.add(ai_msg)
+#     db.commit()
+#     db.refresh(ai_msg)
+
+#     return ai_msg
+
+UPLOAD_DIR = "uploaded_images"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/chats/{chat_id}/messages")
+async def create_message_with_response(
+    chat_id: int,
+    content: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     chat = db.query(ChatSession).filter(
         ChatSession.id == chat_id,
         ChatSession.user_id == user.id,
@@ -225,22 +263,43 @@ def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Sess
 
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    user_msg = Message(chat_id=chat_id,role="user",content=req.content)
+
+    # Handle optional image
+    image_url = None
+    if file:
+        ext = os.path.splitext(file.filename)[1]
+        filename = f"{uuid4().hex}{ext}"
+        path = os.path.join(UPLOAD_DIR, filename)
+        with open(path, "wb") as f:
+            f.write(await file.read())
+        image_url = f"/images/{filename}"
+
+    # Save user message
+    user_msg = Message(
+        chat_id=chat_id,
+        role="user",
+        content=content,
+        image_url=image_url
+    )
     db.add(user_msg)
     db.commit()
     db.refresh(user_msg)
 
+    # Refresh messages (ensures new message included)
     db.refresh(chat)
-
-    # we need to invoke the AI model to generate a response
+    # Generate ai reply
     ai_reply = generate_assistant_response(chat.messages)
-    # Store ai message
-    ai_msg = Message(chat_id=chat_id,role="ai",content=ai_reply)
+    # Save AI message
+    ai_msg = Message(
+        chat_id=chat_id,
+        role="assistant",
+        content=ai_reply
+    )
     db.add(ai_msg)
     db.commit()
     db.refresh(ai_msg)
 
-    return ai_msg
+    return ai_msg.content
 
 @app.delete("/logout")
 def logout(user: User = Depends(get_current_user)):
