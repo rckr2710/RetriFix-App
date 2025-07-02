@@ -1,34 +1,58 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import "./LoginPage.css";
-import { Link } from "react-router-dom";
 
 function LoginPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    navigate("/main");
+    setError("");
+    try {
+      const response = await fetch("http://localhost:8000/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+        credentials: "include", // to handle cookies
+      });
+      const data = await response.json();
+      if (response.ok) {
+        navigate("/auth", { state: { response: data } });
+      } else {
+        setError(data?.detail || "Login failed");
+      }
+    } catch (err) {
+      setError("Error connecting to backend");
+    }
   };
+
   return (
     <div className="login-page">
       <h1>Login</h1>
       <form className="login-form" onSubmit={handleSubmit}>
         <div className="form-block">
           <label>Username</label>
-          <input type="text" placeholder="Username" />
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
         </div>
         <div className="form-block">
           <label>Password</label>
-          <input type="password" placeholder="Password" />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         </div>
         <button type="submit">Login</button>
-        <spam>
-          Dont't you have a account?
-          <Link to="/" className="sign-up">
-            Sign Up
-          </Link>
-        </spam>
+        {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
       </form>
     </div>
   );
