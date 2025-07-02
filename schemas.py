@@ -2,6 +2,11 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
+
+class LdapUser(BaseModel):
+    username: str
+    password: str
+
 class UserLogin(BaseModel):
     username: str
     password: str
@@ -32,12 +37,3 @@ class MessageResponse(BaseModel):
 class MessageCreateRequest(BaseModel):
     role: Optional[str] = "user"
     content: str
-
-class MessageResponse(BaseModel):
-    id: int
-    role: str
-    content: str
-    created_at: datetime
-
-    class Config:
-        orm_mode = True

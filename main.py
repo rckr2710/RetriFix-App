@@ -14,11 +14,11 @@ from jwt_token import create_access_token, verify_token, get_current_user
 # from fastapi import Header
 from fastapi import Cookie
 from ldap3 import Server, Connection, ALL
-from ldap3.core.exceptions import LDAPException, LDAPBindError
+from ldap3.core.exceptions import LDAPException
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
-from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessageResponse, UserLogin
+from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessageResponse, UserLogin, LdapUser
 
 app = FastAPI()
 
@@ -53,16 +53,45 @@ BASE_DN = "dc=local"
 
 
 
+@app.post("/add-users")
+def add_users(users: List[LdapUser]):
+    try:
+        server = Server(LDAP_SERVER, get_info=ALL)
+        conn = Connection(server, user=ADMIN_DN, password=ADMIN_PASSWORD, auto_bind=True)
+        added = []
+        for user in users:
+            user_dn = f"uid={user.username},{BASE_DN}"
+
+            # Check if user already exists
+            if conn.search(BASE_DN, f"(uid={user.username})", attributes=["uid"]):
+                continue  # skip existing
+            attributes = {
+                "objectClass": ["inetOrgPerson"],
+                "uid": user.username,
+                "cn": user.username,
+                "sn": user.username,
+                "userPassword": ldap_salted_sha1.hash(user.password)
+            }
+            conn.add(dn=user_dn, attributes=attributes)
+            if conn.result["description"] == "success":
+                added.append(user.username)
+            else:
+                raise HTTPException(status_code=500, detail=f"Failed to add {user.username}")
+        return {"message": "Users added successfully", "added": added}
+    except LDAPException as e:
+        raise HTTPException(status_code=500, detail=f"LDAP error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
 @app.post("/login")
 def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
     user_dn = f"uid={user.username},{BASE_DN}"
     try:
         server = Server(LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=user_dn, password=user.password)
-
         if not conn.bind():
             raise HTTPException(status_code=401, detail="Invalid username or password")
-
         # {"message": f"User {request.username} authenticated successfully"}
         db_user = db.query(User).filter(User.username == user.username).first()
         if not db_user:
@@ -138,7 +167,7 @@ def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(
     )
     return response
 
-
+# Create chat session for user
 @app.post("/chats", response_model=ChatResponse)
 def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     new_chat = ChatSession(user_id=user.id, title=req.title)
@@ -153,7 +182,7 @@ def list_chats(db: Session = Depends(get_db), user: User = Depends(get_current_u
     chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).order_by(ChatSession.updated_at.desc()).all()
     return chats
 
-# Delete a chat session (soft delete)
+# Delete a chat session
 @app.delete("/chats/{chat_id}")
 def delete_chat(chat_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id).first()
@@ -193,21 +222,23 @@ def create_message_with_response(chat_id: int,req: MessageCreateRequest,db: Sess
     ).first()
 
     if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found or access denied")
+        raise HTTPException(status_code=404, detail="Chat not found")
     user_msg = Message(chat_id=chat_id,role="user",content=req.content)
     db.add(user_msg)
     db.commit()
     db.refresh(user_msg)
 
     db.refresh(chat)
-    assistant_reply = generate_assistant_response(chat.messages)
-    # Store ai message
-    assistant_msg = Message(chat_id=chat_id,role="ai",content=assistant_reply)
-    db.add(assistant_msg)
-    db.commit()
-    db.refresh(assistant_msg)
 
-    return assistant_msg
+    # we need to invoke the AI model to generate a response
+    ai_reply = generate_assistant_response(chat.messages)
+    # Store ai message
+    ai_msg = Message(chat_id=chat_id,role="ai",content=ai_reply)
+    db.add(ai_msg)
+    db.commit()
+    db.refresh(ai_msg)
+
+    return ai_msg
 
 @app.delete("/logout")
 def logout(user: User = Depends(get_current_user)):
