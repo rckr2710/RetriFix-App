@@ -3,13 +3,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from config import settings
 
-# DB_USER = "rf"
-# DB_PASS = "rf"
-# DB_HOST = "localhost"  # If FastAPI runs outside Docker. Use "db" if both are in same docker network.
-# DB_PORT = "5432"
-# DB_NAME = "rfdb"
-
-# DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 DATABASE_URL = f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
