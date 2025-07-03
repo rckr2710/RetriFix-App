@@ -4,8 +4,6 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
-
-# Create chat session for user
 from config import Settings
 from database import get_db
 from jwt_token import get_current_user
@@ -55,7 +53,7 @@ def delete_chat(chat_id: UUID, db: Session = Depends(get_db), user: User = Depen
     return {"message": "Chat deleted"}
 
 # Get messages for a specific chat
-@router.get("/chats/{chat_id}/messages", response_model=List[MessageResponse])
+@router.get("/chats/messages/{chat_id}", response_model=List[MessageResponse])
 def get_chat_messages(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
     if not chat:
@@ -80,7 +78,7 @@ def generate_ai_response(messages: List[Message]) -> str:
 settings = Settings()
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
-@router.post("/chats/{chat_id}/messages")
+@router.post("/chats/message/{chat_id}")
 async def create_message(
     chat_id: UUID,
     content: str = Form(...),
