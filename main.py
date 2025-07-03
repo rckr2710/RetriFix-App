@@ -168,10 +168,18 @@ def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: Use
     return new_chat
 
 # Get all chat sessions for user
-@app.get("/chats", response_model=List[ChatResponse])
+@app.get("/chats")
 def list_chats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).order_by(ChatSession.updated_at.desc()).all()
-    return chats
+    if not chats:
+        raise HTTPException(status_code=404, detail="No chats found")
+    messages = db.query(Message).filter(Message.chat_id.in_([chat.id for chat in chats])).all()
+    return [{
+        "id": chat.id,
+        "title": chat.title,
+        "created_at": chat.created_at,
+        "messages": [msg for msg in messages if msg.chat_id == chat.id]
+    } for chat in chats]
 
 # Delete a chat session
 @app.delete("/chats/{chat_id}")
@@ -193,7 +201,7 @@ def get_chat_messages(chat_id: int, db: Session = Depends(get_db), user: User = 
 
 
 
-def generate_assistant_response(messages: List[Message]) -> str:
+def generate_ai_response(messages: List[Message]) -> str:
     """
     Dummy model response generator for testing.
     Returns a mock reply based on the last user message.
@@ -209,7 +217,7 @@ def generate_assistant_response(messages: List[Message]) -> str:
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 @app.post("/chats/{chat_id}/messages")
-async def create_message_with_response(
+async def create_message(
     chat_id: str,
     content: str = Form(...),
     file: Optional[UploadFile] = File(None),
@@ -249,7 +257,7 @@ async def create_message_with_response(
     # Refresh messages (ensures new message included)
     db.refresh(chat)
     # Generate ai reply
-    ai_reply = generate_assistant_response(chat.messages)
+    ai_reply = generate_ai_response(chat.messages)
     # Save AI message
     ai_msg = Message(
         chat_id=chat_id,

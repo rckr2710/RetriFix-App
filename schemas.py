@@ -22,8 +22,6 @@ class ChatResponse(BaseModel):
     id: UUID
     title: str
     created_at: datetime
-    updated_at: datetime
-    is_deleted: bool
 
     class Config:
         orm_mode = True
