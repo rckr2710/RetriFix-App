@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID  # Import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 
 class LdapUser(BaseModel):
@@ -16,6 +16,13 @@ class UserLogin(BaseModel):
 
 class ChatCreateRequest(BaseModel):
     title: Optional[str] = "New Chat"
+    
+    @validator("title")
+    def limit_to_five_words(cls, value):
+        words = value.strip().split()
+        if len(words) > 5:
+            return " ".join(words[:5])  # truncate
+        return value
 
 
 class ChatResponse(BaseModel):

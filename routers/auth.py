@@ -54,7 +54,7 @@ def add_users(users: List[LdapUser]):
 
 
 @router.post("/login")
-def ldap_login(user: UserLogin,db: Session = Depends(get_db)):
+def login(user: UserLogin,db: Session = Depends(get_db)):
     user_dn = f"uid={user.username},{settings.BASE_DN}"
     try:
         server = Server(settings.LDAP_SERVER, get_info=ALL)

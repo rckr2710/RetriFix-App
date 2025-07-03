@@ -4,8 +4,6 @@ from routers import auth, chat
 
 app = FastAPI()
 
-# Base.metadata.create_all(bind=engine)
-
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(

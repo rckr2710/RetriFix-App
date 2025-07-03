@@ -18,7 +18,9 @@ router = APIRouter(prefix="", tags=["Chat"])
 
 @router.post("/chats", response_model=ChatResponse)
 def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    chat = ChatSession(user_id=user.id, title=req.title)
+    given_title = req.title.strip().split()
+    trimmed_title = " ".join(given_title[:5])
+    chat = ChatSession(user_id=user.id, title=trimmed_title)
     db.add(chat)
     db.commit()
     db.refresh(chat)
