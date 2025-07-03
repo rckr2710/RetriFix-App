@@ -161,11 +161,11 @@ def verify_mfa(mfa_code: str,username: str = Cookie(None),db: Session = Depends(
 # Create chat session for user
 @app.post("/chats", response_model=ChatResponse)
 def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    new_chat = ChatSession(user_id=user.id, title=req.title)
-    db.add(new_chat)
+    chat = ChatSession(user_id=user.id, title=req.title)
+    db.add(chat)
     db.commit()
-    db.refresh(new_chat)
-    return new_chat
+    db.refresh(chat)
+    return chat
 
 # Get all chat sessions messages from user & ai
 @app.get("/chats/{chat_id}", response_model=ChatMsgsResponse)
