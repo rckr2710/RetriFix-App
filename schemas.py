@@ -38,10 +38,29 @@ class MessageResponse(BaseModel):
         orm_mode = True
 
 
-class MessageCreateRequest(BaseModel):
-    role: Optional[str] = "user"
-    content: str
+# class MessageCreateRequest(BaseModel):
+#     role: Optional[str] = "user"
+#     content: str
 
 
-class MessagePairResponse(BaseModel):
+# class MessagePairResponse(BaseModel):
+#     messages: List[MessageResponse]
+
+# class MessageResponse(BaseModel):
+#     id: int  # or UUID if applicable
+#     role: str  # 'user' or 'ai'
+#     content: str
+#     created_at: datetime
+
+#     class Config:
+#         orm_mode = True
+
+
+class ChatMsgsResponse(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
     messages: List[MessageResponse]
+
+    class Config:
+        orm_mode = True

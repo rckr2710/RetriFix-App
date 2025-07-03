@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 from fastapi import FastAPI, Depends, Form, HTTPException, Header, Security, requests
 import httpx
 from pydantic import BaseModel
@@ -17,7 +17,7 @@ from ldap3.core.exceptions import LDAPException
 from ldap3.utils.hashed import hashed
 from passlib.hash import ldap_salted_sha1
 from fastapi import File, UploadFile
-from schemas import ChatCreateRequest, ChatResponse, MessageCreateRequest, MessagePairResponse, MessageResponse, UserLogin, LdapUser
+from schemas import ChatCreateRequest, ChatMsgsResponse, ChatResponse, MessageResponse, UserLogin, LdapUser
 from config import settings
 
 app = FastAPI()
@@ -167,23 +167,28 @@ def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: Use
     db.refresh(new_chat)
     return new_chat
 
-# Get all chat sessions for user
-@app.get("/chats")
-def list_chats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).order_by(ChatSession.updated_at.desc()).all()
-    if not chats:
-        raise HTTPException(status_code=404, detail="No chats found")
-    messages = db.query(Message).filter(Message.chat_id.in_([chat.id for chat in chats])).all()
-    return [{
-        "id": chat.id,
-        "title": chat.title,
-        "created_at": chat.created_at,
-        "messages": [msg for msg in messages if msg.chat_id == chat.id]
-    } for chat in chats]
+# Get all chat sessions messages from user & ai
+@app.get("/chats/{chat_id}", response_model=ChatMsgsResponse)
+def get_chat_details(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    db.refresh()
+    chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    # Refresh the chat to ensure messages are loaded
+    db.refresh(chat)
+
+    messages = db.query(Message)\
+        .filter_by(chat_id=chat.id)\
+        .order_by(Message.created_at.asc())\
+        .all()
+
+    chat.messages = messages
+
+    return chat
 
 # Delete a chat session
 @app.delete("/chats/{chat_id}")
-def delete_chat(chat_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_chat(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id).first()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -193,7 +198,7 @@ def delete_chat(chat_id: int, db: Session = Depends(get_db), user: User = Depend
 
 # Get messages for a specific chat
 @app.get("/chats/{chat_id}/messages", response_model=List[MessageResponse])
-def get_chat_messages(chat_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_chat_messages(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -218,7 +223,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 @app.post("/chats/{chat_id}/messages")
 async def create_message(
-    chat_id: str,
+    chat_id: UUID,
     content: str = Form(...),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
