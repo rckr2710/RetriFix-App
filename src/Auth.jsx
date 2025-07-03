@@ -69,9 +69,6 @@ export default function AuthPage() {
             )}&size=200x200`}
             alt="MFA QR"
           />
-          <p style={{ wordBreak: "break-all", fontSize: 12, marginTop: 10 }}>
-            {response.MFAuri}
-          </p>
           <form onSubmit={handleVerify} style={{ marginTop: 20 }}>
             <label>
               Enter OTP from Authenticator:

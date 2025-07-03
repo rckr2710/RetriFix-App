@@ -8,7 +8,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<LoginPage />} />
         <Route path="/main" element={<MainLayout />} />
         <Route path="/auth" element={<AuthPage />} />
         {/* Add more routes as needed */}
