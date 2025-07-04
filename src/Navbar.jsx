@@ -35,9 +35,22 @@ export default function Navbar() {
     };
   }, [showFeedback, showDropdown, showLogoutConfirm]);
 
-  const handleLogout = () => {
+  // Logout handler: calls backend and clears cookies
+  const handleLogout = async () => {
     setShowLogoutConfirm(false);
-    navigate("/login");
+    try {
+      const res = await fetch("http://localhost:8000/logout", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        navigate("/login");
+      } else {
+        alert("Logout failed");
+      }
+    } catch (err) {
+      alert("Error connecting to backend");
+    }
   };
 
   return (

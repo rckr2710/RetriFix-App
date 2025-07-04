@@ -65,6 +65,7 @@
   border-radius: 4px;
   border: 1px solid #aaa;
   resize: vertical;
+  margin: 0 12px;
   font-size: 14px;
 }
 
@@ -75,8 +76,15 @@
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  align-items: center;
 }
 
 .ticket-form button:hover {
   background-color: #555;
+}
+.ticket-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 24px; /* Increase this value for more space */
+  margin-top: 10px;
 }
