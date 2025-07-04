@@ -97,14 +97,14 @@ def login(user: UserLogin,db: Session = Depends(get_db)):
             secure=False,
             samesite="Lax",
         )
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            max_age=1800,
-            secure=False,
-            samesite="Lax",
-        )
+        # response.set_cookie(
+        #     key="access_token",
+        #     value=access_token,
+        #     httponly=True,
+        #     max_age=1800,
+        #     secure=False,
+        #     samesite="Lax",
+        # )
         return response
 
     except LDAPException:

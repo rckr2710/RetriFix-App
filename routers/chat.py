@@ -14,6 +14,65 @@ from schemas import ChatCreateRequest, ChatMsgsResponse, ChatResponse, MessageRe
 
 router = APIRouter(prefix="", tags=["Chat"])
 
+settings = Settings()
+
+# UPLOAD_DIR = "uploaded_images"
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+@router.post("/chats/message/{chat_id}")
+async def create_message(
+    chat_id: UUID,
+    content: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    chat = db.query(ChatSession).filter(
+        ChatSession.id == chat_id,
+        ChatSession.user_id == user.id,
+        ChatSession.is_deleted == False
+    ).first()
+
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Handle optional image
+    image_url = None
+    if file:
+        ext = os.path.splitext(file.filename)[1]
+        filename = f"{uuid4().hex}{ext}"
+        path = os.path.join(settings.UPLOAD_DIR, filename)
+        with open(path, "wb") as f:
+            f.write(await file.read())
+        image_url = f"/images/{filename}"
+
+    # Save user message
+    user_msg = Message(
+        chat_id=chat_id,
+        role="user",
+        content=content,
+        image_url=image_url
+    )
+    db.add(user_msg)
+    db.commit()
+    db.refresh(user_msg)
+
+    # Refresh messages (ensures new message included)
+    db.refresh(chat)
+    # Generate ai reply
+    ai_reply = generate_ai_response(chat.messages)
+    # Save AI message
+    ai_msg = Message(
+        chat_id=chat_id,
+        role="assistant",
+        content=ai_reply
+    )
+    db.add(ai_msg)
+    db.commit()
+    db.refresh(ai_msg)
+
+    return ai_msg.content
+
 @router.post("/chats", response_model=ChatResponse)
 def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     given_title = req.title.strip().split()
@@ -74,60 +133,3 @@ def generate_ai_response(messages: List[Message]) -> str:
 
 
 
-# UPLOAD_DIR = "uploaded_images"
-settings = Settings()
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-@router.post("/chats/message/{chat_id}")
-async def create_message(
-    chat_id: UUID,
-    content: str = Form(...),
-    file: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
-    chat = db.query(ChatSession).filter(
-        ChatSession.id == chat_id,
-        ChatSession.user_id == user.id,
-        ChatSession.is_deleted == False
-    ).first()
-
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
-    # Handle optional image
-    image_url = None
-    if file:
-        ext = os.path.splitext(file.filename)[1]
-        filename = f"{uuid4().hex}{ext}"
-        path = os.path.join(settings.UPLOAD_DIR, filename)
-        with open(path, "wb") as f:
-            f.write(await file.read())
-        image_url = f"/images/{filename}"
-
-    # Save user message
-    user_msg = Message(
-        chat_id=chat_id,
-        role="user",
-        content=content,
-        image_url=image_url
-    )
-    db.add(user_msg)
-    db.commit()
-    db.refresh(user_msg)
-
-    # Refresh messages (ensures new message included)
-    db.refresh(chat)
-    # Generate ai reply
-    ai_reply = generate_ai_response(chat.messages)
-    # Save AI message
-    ai_msg = Message(
-        chat_id=chat_id,
-        role="assistant",
-        content=ai_reply
-    )
-    db.add(ai_msg)
-    db.commit()
-    db.refresh(ai_msg)
-
-    return ai_msg.content
