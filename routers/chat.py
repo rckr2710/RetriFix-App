@@ -93,6 +93,23 @@ def create_chat(req: Optional[ChatCreateRequest] = None, db: Session = Depends(g
     db.refresh(chat)
     return chat
 
+@router.get("/chats/chatlist", response_model=List[UserChatList])
+def get_user_chats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    if not user:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+
+    chats = (
+        db.query(ChatSession)
+        .filter_by(user_id=user.id, is_deleted=False)
+        .order_by(ChatSession.created_at.desc())
+        .all()
+    )
+    return chats
+
+
 # Get all chat sessions messages from user & ai
 @router.get("/chats/{chat_id}", response_model=ChatMessages)
 def get_chat_details(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -122,16 +139,7 @@ def delete_chat(chat_id: UUID, db: Session = Depends(get_db), user: User = Depen
     return {"message": "Chat deleted"}
 
 
-@router.get("/chats/chatlist", response_model=List[UserChatList])
-def get_user_chats(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
-    if not user:
-        raise HTTPException(status_code=401, detail="User not authenticated")
 
-    chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).all()
-    return chats
 
 
 
