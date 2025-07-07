@@ -15,14 +15,7 @@ class UserLogin(BaseModel):
 
 
 class ChatCreateRequest(BaseModel):
-    title: Optional[str] = "New Chat"
-    
-    @validator("title")
-    def limit_to_five_words(cls, value):
-        words = value.strip().split()
-        if len(words) > 5:
-            return " ".join(words[:5])  # truncate
-        return value
+    title: str = "new chat"
 
 
 class ChatResponse(BaseModel):
@@ -44,26 +37,15 @@ class MessageResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class UserChatList(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
 
-# class MessageCreateRequest(BaseModel):
-#     role: Optional[str] = "user"
-#     content: str
+    class Config:
+        orm_mode = True
 
-
-# class MessagePairResponse(BaseModel):
-#     messages: List[MessageResponse]
-
-# class MessageResponse(BaseModel):
-#     id: int  # or UUID if applicable
-#     role: str  # 'user' or 'ai'
-#     content: str
-#     created_at: datetime
-
-#     class Config:
-#         orm_mode = True
-
-
-class ChatMsgsResponse(BaseModel):
+class ChatMessages(BaseModel):
     id: UUID
     title: str
     created_at: datetime

@@ -8,7 +8,7 @@ from config import Settings
 from database import get_db
 from jwt_token import get_current_user
 from models import ChatSession, Message, User
-from schemas import ChatCreateRequest, ChatMsgsResponse, ChatResponse, MessageResponse
+from schemas import ChatCreateRequest, ChatMessages, ChatResponse, MessageResponse, UserChatList
 
 # app = FastAPI()
 
@@ -18,6 +18,17 @@ settings = Settings()
 
 # UPLOAD_DIR = "uploaded_images"
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+def generate_ai_response(messages: List[Message]) -> str:
+    """
+    Dummy model response generator for testing.
+    Returns a mock reply based on the last user message.
+    """
+    last_user_message = next((m for m in reversed(messages) if m.role == "user"), None)
+    if last_user_message:
+        return f"Mock reply to: '{last_user_message.content}'"
+    return "Hello! This is a test response."
+
 
 @router.post("/chats/message/{chat_id}")
 async def create_message(
@@ -74,17 +85,16 @@ async def create_message(
     return ai_msg.content
 
 @router.post("/chats", response_model=ChatResponse)
-def create_chat(req: ChatCreateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    given_title = req.title.strip().split()
-    trimmed_title = " ".join(given_title[:5])
-    chat = ChatSession(user_id=user.id, title=trimmed_title)
+def create_chat(req: Optional[ChatCreateRequest] = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    title = req.title if req and req.title else "new chat"
+    chat = ChatSession(user_id=user.id, title=title)
     db.add(chat)
     db.commit()
     db.refresh(chat)
     return chat
 
 # Get all chat sessions messages from user & ai
-@router.get("/chats/{chat_id}", response_model=ChatMsgsResponse)
+@router.get("/chats/{chat_id}", response_model=ChatMessages)
 def get_chat_details(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
     if not chat:
@@ -111,25 +121,19 @@ def delete_chat(chat_id: UUID, db: Session = Depends(get_db), user: User = Depen
     db.commit()
     return {"message": "Chat deleted"}
 
-# Get messages for a specific chat
-@router.get("/chats/messages/{chat_id}", response_model=List[MessageResponse])
-def get_chat_messages(chat_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user.id, is_deleted=False).first()
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    return chat.messages
+
+@router.get("/chats/chatlist", response_model=List[UserChatList])
+def get_user_chats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    if not user:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+
+    chats = db.query(ChatSession).filter_by(user_id=user.id, is_deleted=False).all()
+    return chats
 
 
-
-def generate_ai_response(messages: List[Message]) -> str:
-    """
-    Dummy model response generator for testing.
-    Returns a mock reply based on the last user message.
-    """
-    last_user_message = next((m for m in reversed(messages) if m.role == "user"), None)
-    if last_user_message:
-        return f"Mock reply to: '{last_user_message.content}'"
-    return "Hello! This is a test response."
 
 
 

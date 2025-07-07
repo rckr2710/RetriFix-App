@@ -97,14 +97,14 @@ def login(user: UserLogin,db: Session = Depends(get_db)):
             secure=False,
             samesite="Lax",
         )
-        # response.set_cookie(
-        #     key="access_token",
-        #     value=access_token,
-        #     httponly=True,
-        #     max_age=1800,
-        #     secure=False,
-        #     samesite="Lax",
-        # )
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            max_age=1800,
+            secure=False,
+            samesite="Lax",
+        )
         return response
 
     except LDAPException:
@@ -145,3 +145,11 @@ def logout(user: User = Depends(get_current_user)):
     response.delete_cookie(key="access_token")
     
     return response
+
+@router.get("/registered-users")
+def get_registered_users(db: Session = Depends(get_db)):
+    users = db.query(User).all()
+    if not users:
+        raise HTTPException(status_code=404, detail="No registered users found")
+    count= len(users)
+    return count
