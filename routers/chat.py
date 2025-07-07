@@ -93,6 +93,7 @@ def create_chat(req: Optional[ChatCreateRequest] = None, db: Session = Depends(g
     db.refresh(chat)
     return chat
 
+# Put this chatids in react state
 @router.get("/chats/chatlist", response_model=List[UserChatList])
 def get_user_chats(
     db: Session = Depends(get_db),
