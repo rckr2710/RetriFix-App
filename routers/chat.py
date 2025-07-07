@@ -56,6 +56,13 @@ async def create_message(
         with open(path, "wb") as f:
             f.write(await file.read())
         image_url = f"/images/{filename}"
+        
+    # Check if it's the first message in the chat
+    existing_messages = db.query(Message).filter(Message.chat_id == chat_id).count()
+    if existing_messages == 0:
+        first_five_words = " ".join(content.strip().split()[:5])
+        chat.title = first_five_words
+        db.add(chat)
 
     # Save user message
     user_msg = Message(
@@ -126,7 +133,6 @@ def get_chat_details(chat_id: UUID, db: Session = Depends(get_db), user: User = 
         .all()
 
     chat.messages = messages
-
     return chat
 
 # Delete a chat session
