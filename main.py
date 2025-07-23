@@ -8,16 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 @app.on_event("startup")
 def on_startup():
     # Base.metadata.drop_all(bind=engine)
+    # init_db()
     Base.metadata.create_all(bind=engine)
 
 

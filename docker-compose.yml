@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  api-server:
+    image: retrifix_api-server:latest
+    container_name: api-server
+    environment:
+      - STREAM_SERVER_URL=http://localhost:8001/stream
+      - LDAP_SERVER=ldap://localhost:389
+      - DB_HOST=localhost
+    ports:
+      - "8000:8000"

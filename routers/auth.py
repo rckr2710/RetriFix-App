@@ -13,19 +13,19 @@ from config import settings
 from database import get_db
 from jwt_token import create_access_token, get_current_user
 from models import User
-from fastapi import FastAPI
-
+import os
 
 # app = FastAPI()
 router = APIRouter(prefix="", tags=["Auth"])
 
 # To list users in ldap
 # ldapsearch -x -H ldap://localhost -D "cn=admin,dc=local" -w admin -b "dc=local"
+LDAP_SERVER=os.getenv("LDAP_SERVER","ldap://localhost:389")
 
 @router.post("/add-users")
 def add_users(users: List[LdapUser]):
     try:
-        server = Server(settings.LDAP_SERVER, get_info=ALL)
+        server = Server(LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=settings.ADMIN_DN, password=settings.ADMIN_PASSWORD, auto_bind=True)
         added = []
         for user in users:
@@ -55,7 +55,7 @@ def add_users(users: List[LdapUser]):
 
 @router.post("/login")
 def login(user: UserLogin,db: Session = Depends(get_db)):
-    user_dn = f"uid={user.username},{settings.BASE_DN}"
+    user_dn = f"uid={user.username},ou=users,{settings.BASE_DN}"
     try:
         server = Server(settings.LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=user_dn, password=user.password)
@@ -80,7 +80,7 @@ def login(user: UserLogin,db: Session = Depends(get_db)):
             response.set_cookie(
                 key="username",
                 value=user.username,
-                httponly=True,
+                httponly=False,
                 max_age=1800,
                 secure=False,
                 samesite="Lax",
@@ -92,7 +92,7 @@ def login(user: UserLogin,db: Session = Depends(get_db)):
         response.set_cookie(
             key="username",
             value=user.username,
-            httponly=True,
+            httponly=False,
             max_age=1800,
             secure=False,
             samesite="Lax",
