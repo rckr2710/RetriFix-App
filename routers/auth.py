@@ -20,12 +20,12 @@ router = APIRouter(prefix="", tags=["Auth"])
 
 # To list users in ldap
 # ldapsearch -x -H ldap://localhost -D "cn=admin,dc=local" -w admin -b "dc=local"
-LDAP_SERVER=os.getenv("LDAP_SERVER","ldap://localhost:389")
+# LDAP_SERVER=os.getenv("LDAP_SERVER","ldap://localhost:389")
 
 @router.post("/add-users")
 def add_users(users: List[LdapUser]):
     try:
-        server = Server(LDAP_SERVER, get_info=ALL)
+        server = Server(settings.LDAP_SERVER, get_info=ALL)
         conn = Connection(server, user=settings.ADMIN_DN, password=settings.ADMIN_PASSWORD, auto_bind=True)
         added = []
         for user in users:
